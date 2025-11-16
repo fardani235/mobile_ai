@@ -1,0 +1,80 @@
+{
+  "expo": {
+    "name": "tm_mobile_ai",
+    "slug": "tm_mobile_ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "tmmobileai",
+    "extra": {
+      "appName": "tm_mobile_ai",
+      "primaryColor": "#1E88E5",
+      "baseUrls": {
+        "api": "https://syc-dev.techmaju.com",
+        "web": "https://syc-dev.techmaju.com",
+        "cdn": "https://syc-dev.techmaju.com"
+      },
+      "auth": {
+        "mode": "session",
+        "serverBaseUrl": "https://syc-dev.techmaju.com",
+        "csrf": {
+          "headerName": "X-Frappe-CSRF-Token",
+          "loginPath": "/api/method/login"
+        },
+        "allowedOrigins": [
+          "https://syc-dev.techmaju.com",
+          "https://syc-dev.techmaju.com"
+        ]
+      },
+      "featureFlags": {},
+      "deepLinkPrefixes": [
+        "tmmobileai://",
+        "tmmobileai://"
+      ],
+      "environment": "development",
+      "router": {},
+      "eas": {
+        "projectId": "38611b37-88d2-473c-a2af-b4a6f0ebfea2"
+      }
+    },
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.techmajudevelopment.tm_mobile_ai"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
