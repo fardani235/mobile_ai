@@ -1,1 +1,80 @@
+{
+  "expo": {
+    "name": "__APP_NAME__",
+    "slug": "__APP_SLUG__",
+    "version": "__APP_VERSION_STRING__",
+    "orientation": "portrait",
+    "icon": "__ICON_PATH__",
+    "scheme": "__APP_SCHEME__",
+    "extra": {
+      "appName": "__APP_NAME__",
+      "primaryColor": "__PRIMARY_COLOR__",
+      "baseUrls": {
+        "api": "__CUSTOMER_URL__",
+        "web": "__CUSTOMER_URL__",
+        "cdn": "__CUSTOMER_URL__"
+      },
+      "auth": {
+        "mode": "session",
+        "serverBaseUrl": "__CUSTOMER_URL__",
+        "csrf": {
+          "headerName": "X-Frappe-CSRF-Token",
+          "loginPath": "/api/method/login"
+        },
+        "allowedOrigins": [
+          "__CUSTOMER_URL__"          
+        ]
+      },
+      "featureFlags": {},
+      "deepLinkPrefixes": [
+        "__APP_SCHEME_PREFIX__"        
+      ],
+      "environment": "development",
+      "router": {},
+      "eas": {
+        "projectId": "__EAS_PROJECT_ID__"
+      }
+    },
+    "userInterfaceStyle": "__ENVIRONMENT__",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "__ANDROID_ADAPTIVE_BG_COLOR__",
+        "foregroundImage": "__ANDROID_FG_PATH__",
+        "backgroundImage": "__ANDROID_BG_PATH__",
+        "monochromeImage": "__ANDROID_MONO_PATH__"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "__ANDROID_PACKAGE_NAME__"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "__FAVICON_PATH__"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "__SPLASH_IMAGE_PATH__",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "__SPLASH_BG_COLOR__",
+          "dark": {
+            "backgroundColor": "__SPLASH_BG_COLOR_DARK__"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "owner": "__EXPO_OWNER__"
+  }
+}
 
