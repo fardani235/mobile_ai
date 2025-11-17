@@ -1,1 +1,622 @@
 
+name: TM Mobile Core::EAS Build - Android & iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile to use (defined in eas.json)'
+        required: false
+        default: 'development'
+      platform:
+        description: 'Platform to build (android, ios, or all)'
+        required: false
+        default: 'android'
+      use_local:
+        description: 'Run EAS build locally on a self-hosted runner using --local (requires a self-hosted runner with Docker).'
+        required: false
+        default: 'false'
+      # Application configuration placeholders
+      app_name:
+        description: 'Application name'
+        required: false
+        default: ''
+      app_slug:
+        description: 'Application slug'
+        required: false
+        default: ''
+      app_config_json:
+        description: 'JSON string containing all app configuration placeholders'
+        required: false
+        default: '{}'
+      app_config_b64:
+        description: 'Base64 of the JSON config (preferred for long inputs)'
+        required: false
+        default: ''
+      app_config_file:
+        description: 'Path to a JSON file in the repo (e.g. config/app_config.json)'
+        required: false
+        default: ''
+
+jobs:
+  build_remote:
+    if: ${{ github.event.inputs.use_local != 'true' }}
+    name: Build (remote) ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [android,ios]
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_BUILD_PROFILE: ${{ github.event.inputs.profile || 'production' }}
+
+    steps:
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Pre-build: Replace placeholders via helper script
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install jq (for substitution script)
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Replace placeholders in app.template.json
+        env:
+          APP_CONFIG_JSON: ${{ github.event.inputs.app_config_json }}
+          APP_CONFIG_JSON_BASE64: ${{ github.event.inputs.app_config_b64 }}
+          APP_CONFIG_JSON_FILE: ${{ github.event.inputs.app_config_file }}
+        run: |
+          bash pipeline/scripts/substitute_app_template.sh
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install dependencies
+        run: npm i
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Show versions
+        run: |
+          node -v
+          npm -v
+          npx eas-cli@latest --version
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Host bootstrap installs JDK/Node/Docker/Android SDK on self-hosted runners.
+      # Remove redundant installation steps — just verify Java is present and show version.
+      - name: Verify host Java (bootstrap provides JDK/SDK/etc)
+        if: ${{ github.event.inputs.platform == 'all' || matrix.platform == 'android' }}
+        run: |
+          echo "Assuming bootstrap script installed JDK, Node, Docker and Android SDK on the runner."
+          echo "Java version (if present):" && java --version || true
+          if [ -n "${JAVA_HOME:-}" ]; then echo "JAVA_HOME=$JAVA_HOME"; else echo "JAVA_HOME not set"; fi
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Run expo doctor (diagnostics, non-fatal)
+        run: |
+          echo "Running expo doctor to surface issues (errors won't fail the job)..."
+          npx -y expo-doctor || true
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install Syft (SBOM generator)
+        run: |
+          echo "Installing syft (Anchore) into $HOME/.local/bin for SBOM generation..."
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$HOME/.local/bin"
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Generate SBOM
+        run: |
+          echo "Generating SBOM (SPDX JSON)..."
+          "$HOME/.local/bin/syft" . -o spdx-json=sbom.spdx.json || true
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.platform }}
+          path: sbom.spdx.json
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Run EAS build (${{ matrix.platform }})
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          EAS_BUILD_PROFILE: ${{ github.event.inputs.profile || 'production' }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          echo "Starting remote EAS build for $PLATFORM using profile '$EAS_BUILD_PROFILE'"
+          echo "Verifying EAS/Expo credentials and project access..."
+          # Ensure a reasonably recent eas-cli is installed (explicit latest helps avoid older cached versions)
+          npm install -g eas-cli@latest >/dev/null 2>&1 || true
+          echo "eas (npx) version: $(npx eas-cli@latest --version 2>/dev/null || echo '(eas not found)')"
+          if ! npx eas-cli@latest whoami >/dev/null 2>&1; then
+            echo "ERROR: EXPO_TOKEN invalid or not authorized to access Expo. Ensure repo secret EXPO_TOKEN has access to the project.";
+            npx eas-cli@latest whoami --json || true
+            exit 1;
+          fi
+
+          # Try to fetch Android credentials with the best-supported command for the installed eas-cli.
+          # The eas CLI has changed command names across releases; attempt multiple fallbacks
+          # rather than hard-failing when a particular subcommand isn't available.
+          _creds_ok=false
+          echo "Attempting credentials:list (preferred command) if available..."
+          if npx eas-cli@latest credentials:list --help >/dev/null 2>&1; then
+            if npx eas-cli@latest credentials:list --platform android --profile "$EAS_BUILD_PROFILE" --non-interactive --json > creds.json 2>creds.err; then
+              _creds_ok=true
+            else
+              echo "credentials:list ran but failed; captured stderr to creds.err"
+            fi
+          else
+            echo "credentials:list not found. Trying alternative eas credentials commands..."
+            # Try 'credentials' (some CLI builds support non-interactive output directly)
+            if npx eas-cli@latest credentials --platform android --non-interactive --json > creds.json 2>creds.err; then
+              _creds_ok=true
+            else
+              echo "'eas credentials' fallback failed or unsupported; trying credentials:configure-build (may be available on some CLIs)..."
+              if npx eas-cli@latest credentials:configure-build --help >/dev/null 2>&1; then
+                # Attempt a dry-run-ish invocation. This command is intended for setup; if it can report existing creds
+                # in JSON we capture it, otherwise it may not be suitable. Still attempt to call with --json for diagnostics.
+                if npx eas-cli@latest credentials:configure-build --platform android --profile "$EAS_BUILD_PROFILE" --non-interactive --json > creds.json 2>creds.err; then
+                  _creds_ok=true
+                else
+                  echo "credentials:configure-build fallback failed or produced no usable output."
+                fi
+              fi
+            fi
+          fi
+
+          # Try legacy expo-cli keystore fetch as last resort (if expo-cli is available)
+          if [ "$_creds_ok" = false ]; then
+            echo "Attempting legacy expo-cli keystore fetch fallback (if available)..."
+            if npx expo-cli fetch:android:keystore --help >/dev/null 2>&1; then
+              if npx expo-cli fetch:android:keystore --non-interactive > creds.json 2>creds.err; then
+                _creds_ok=true
+              else
+                echo "expo-cli fetch:android:keystore ran but failed; captured stderr to creds.err"
+              fi
+            else
+              echo "expo-cli fetch:android:keystore not available via npx; skipping.";
+            fi
+          fi
+
+          if [ "$_creds_ok" = false ]; then
+            echo "WARNING: Unable to perform reliable automated credential lookup using available CLI commands."
+            echo "This may be due to eas-cli command-surface differences or missing Expo-stored credentials. Will proceed to run the build, which may still fail non-interactively if credentials are missing."
+            echo "==== eas whoami (json) ===="
+            npx eas-cli@latest whoami --json || true
+            echo "==== last creds.err (if any) ===="
+            cat creds.err 2>/dev/null || true
+            echo "==== last creds.json (if any) ===="
+            cat creds.json 2>/dev/null || true
+            echo "==== eas credentials --help output ===="
+            npx eas-cli@latest credentials --help 2>&1 || true
+            echo "==== app.json project identifiers ===="
+            if [ -f app.json ]; then
+              jq -r '.extra.eas.projectId // .expo.slug // .slug // "(none)"' app.json || true
+            else
+              echo "app.json not found"
+            fi
+          else
+            echo "Android credentials appear accessible (credentials output captured). Continuing with build..."
+          fi
+          sudo apt-get update -y && sudo apt-get install -y jq curl
+          npx eas-cli@latest build --platform "$PLATFORM" --profile "$EAS_BUILD_PROFILE" --non-interactive --wait --json > eas-out.json
+          echo "EAS build finished. Inspecting output..."
+          sed -n '1,200p' eas-out.json || true
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        id: extract
+        name: Extract artifact URL and build ID
+        run: |
+          bash pipeline/scripts/extract_artifact.sh
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Download build artifact (if available)
+        env:
+          ARTIFACT_URL: ${{ steps.extract.outputs.ARTIFACT_URL }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          if [ -n "${ARTIFACT_URL:-}" ]; then
+            echo "Downloading artifact from: $ARTIFACT_URL"
+            ext="aab"; [ "$PLATFORM" = "ios" ] && ext="ipa"
+            outname="app-${PLATFORM}.${ext}"
+            curl -L "$ARTIFACT_URL" -o "$outname" || true
+          else
+            echo "No artifact URL available; skipping download."
+          fi
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload binary artifact (if present)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.platform }}-binary
+          path: |
+            app-${{ matrix.platform }}.*
+            build-*.aab
+            build-*.apk
+            build-*.ipa
+            *.aab
+            *.apk
+            *.ipa
+          if-no-files-found: warn
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Create build info metadata
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_PROFILE: ${{ github.event.inputs.profile || 'development' }}
+        run: |
+          # Create timestamp and commit-based info
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          COMMIT_SHORT=$(echo $GITHUB_SHA | cut -c1-7)
+          S3_PREFIX="builds/${BUILD_PROFILE}/${PLATFORM}/${TIMESTAMP}-${COMMIT_SHORT}"
+          
+          # Create build info metadata
+          cat > build-info.json <<EOF
+          {
+            "platform": "$PLATFORM",
+            "profile": "$BUILD_PROFILE",
+            "timestamp": "$TIMESTAMP",
+            "commit": "$GITHUB_SHA",
+            "commit_short": "$COMMIT_SHORT",
+            "branch": "$GITHUB_REF_NAME",
+            "workflow_run_id": "$GITHUB_RUN_ID",
+            "workflow_run_number": "$GITHUB_RUN_NUMBER",
+            "build_type": "remote",
+            "s3_prefix": "$S3_PREFIX"
+          }
+          EOF
+          
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Prepare artifacts for S3 upload (artifacts only, no source code)
+        run: |
+          # Create a clean directory with only build artifacts and metadata
+          mkdir -p s3-upload
+          
+          # Copy build artifacts (if they exist)
+          cp -f *.aab s3-upload/ 2>/dev/null || true
+          cp -f *.apk s3-upload/ 2>/dev/null || true  
+          cp -f *.ipa s3-upload/ 2>/dev/null || true
+          cp -f app-*.* s3-upload/ 2>/dev/null || true
+          cp -f build-*.* s3-upload/ 2>/dev/null || true
+          
+          # Copy metadata files
+          cp -f build-info.json s3-upload/ 2>/dev/null || true
+          cp -f sbom.spdx.json s3-upload/ 2>/dev/null || true
+          cp -f eas-out.json s3-upload/ 2>/dev/null || true
+          cp -f eas-view.json s3-upload/ 2>/dev/null || true
+          
+          echo "Files prepared for S3 upload:"
+          ls -la s3-upload/ || echo "No files in s3-upload directory"
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload artifacts to S3
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_bucket: ${{ secrets.S3_BUCKET_NAME }}
+          source_dir: 's3-upload'
+          destination_dir: ${{ env.S3_PREFIX }}
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Notify customer instance with S3 metadata
+        env:
+          CUSTOMER_API_TOKEN: ${{ secrets.CUSTOMER_API_TOKEN }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+          S3_PREFIX: ${{ env.S3_PREFIX }}
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_PROFILE: ${{ github.event.inputs.profile || 'development' }}
+          BUILD_ID: ${{ steps.extract.outputs.BUILD_ID }}
+          ARTIFACT_URL: ${{ steps.extract.outputs.ARTIFACT_URL }}
+        run: |
+          bash pipeline/scripts/notify_customer.sh
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Show last build(s)
+        run: |
+          npx eas-cli@latest build:list --status finished --limit 5 || true
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload build metadata
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform) && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-${{ matrix.platform }}-metadata
+          path: |
+            eas-out.json
+            eas-view.json
+          if-no-files-found: ignore
+
+  build_local:
+    if: ${{ github.event.inputs.use_local == 'true' }}
+    name: Build (local) ${{ matrix.platform }}
+    runs-on:      
+      - self-hosted
+      - techmaju-dev-runner
+    strategy:
+      matrix:
+        platform: [android]
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_BUILD_PROFILE: ${{ github.event.inputs.profile || 'production' }}
+
+    steps:
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Checkout repository
+        uses: actions/checkout@v4
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Pre-build: Replace placeholders via helper script
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install jq (for substitution script)
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y jq
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Replace placeholders in app.template.json
+        env:
+          APP_CONFIG_JSON: ${{ github.event.inputs.app_config_json }}
+          APP_CONFIG_JSON_BASE64: ${{ github.event.inputs.app_config_b64 }}
+          APP_CONFIG_JSON_FILE: ${{ github.event.inputs.app_config_file }}
+        run: |
+          bash pipeline/scripts/substitute_app_template.sh
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Show versions
+        run: |
+          node -v
+          npm -v
+          npx eas-cli@latest --version
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Restore Android keystore when doing a local build and keystore secret is present
+      - name: Restore Android keystore (base64 secret)
+        if: ${{ github.event.inputs.platform == 'all' || matrix.platform == 'android' }}
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Restoring Android keystore to android/keystores/keystore.jks"
+            mkdir -p android/keystores
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystores/keystore.jks
+            ls -la android/keystores
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret present; skipping keystore restore."
+          fi
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Install Syft (SBOM generator)
+        run: |
+          echo "Installing syft (Anchore) into $HOME/.local/bin for SBOM generation..."
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$HOME/.local/bin"
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Generate SBOM
+        run: |
+          echo "Generating SBOM (SPDX JSON)..."
+          "$HOME/.local/bin/syft" . -o spdx-json=sbom.spdx.json || true
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.platform }}
+          path: sbom.spdx.json
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Run EAS build (${{ matrix.platform }}) and capture artifact (local)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          EAS_BUILD_PROFILE: ${{ github.event.inputs.profile || 'production' }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          # Ensure NODE_ENV and JAVA_HOME are visible to the build tools (helps expo-doctor and gradle)
+          export NODE_ENV=production
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 || true
+          echo "Starting local EAS build for $PLATFORM using profile '$EAS_BUILD_PROFILE' (NODE_ENV=$NODE_ENV)"
+          sudo apt-get update -y && sudo apt-get install -y jq curl
+          docker --version || true
+
+          # Run EAS local build but capture failure so we can attempt a host-side gradle fallback
+          if npx eas-cli@latest build --platform "$PLATFORM" --profile "$EAS_BUILD_PROFILE" --non-interactive --local --json --wait > eas-out.json; then
+            echo "EAS local build finished. Inspecting output..."
+            cat eas-out.json || true
+          else
+            echo "EAS local build failed — capturing eas-out.json (if any) and attempting fallback host Gradle build."
+            cat eas-out.json || true
+
+            echo "Attempting best-effort fallback: prebuild + run host Gradle (requires Android SDK/NDK on the host)."
+            # Try to prebuild native projects (does not fail the step)
+            npx expo prebuild --no-install || true
+            ls -la android || true
+
+            if [ -f android/gradlew ]; then
+              echo "Found android/gradlew, attempting host Gradle assembleRelease (best-effort)."
+              chmod +x android/gradlew || true
+              (cd android && ./gradlew assembleRelease -x bundleRelease) || true
+              # try to find apk/aab and copy to workspace root
+              find android -type f \( -name "*.apk" -o -name "*.aab" \) -print -exec cp --parents {} . \; || true
+            else
+              echo "No android/gradlew found; cannot run host Gradle fallback."
+            fi
+          
+          # List all potential build artifacts for debugging
+          echo "Listing all potential build artifacts in workspace:"
+          ls -la *.aab *.apk *.ipa build-*.* app-*.* 2>/dev/null || echo "No build artifacts found with common patterns"
+          fi
+          URL=""
+          TYPE=$(jq -r 'type' eas-out.json || echo "null")
+          if [ "$TYPE" = "array" ]; then
+            LEN=$(jq 'length' eas-out.json || echo 0)
+            i=0
+            while [ "$i" -lt "$LEN" ]; do
+              URL=$(jq -r ".[$i].artifacts.buildUrl // .[$i].artifacts.url // (.[$i].artifacts[0].url // empty)" eas-out.json 2>/dev/null || true)
+              if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+                break
+              fi
+              i=$((i+1))
+            done
+            BUILD_ID=$(jq -r '.[0].id // empty' eas-out.json || echo "")
+          else
+            URL=$(jq -r '.artifacts.buildUrl // .artifacts.url // .artifacts[0].url // empty' eas-out.json 2>/dev/null || true)
+            BUILD_ID=$(jq -r '.id // empty' eas-out.json || echo "")
+          fi
+          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+            echo "No artifact URL found in eas-out.json. Trying to query build by id..."
+            if [ -n "$BUILD_ID" ]; then
+              npx eas-cli@latest build:view --json "$BUILD_ID" > eas-view.json || true
+              cat eas-view.json || true
+              URL=$(jq -r 'if type=="array" then (.[0].artifacts.buildUrl // .[0].artifacts.url // .[0].artifacts[0].url) else (.artifacts.buildUrl // .artifacts.url // .artifacts[0].url) end // empty' eas-view.json || echo "")
+            fi
+          fi
+          if [ -n "$URL" ] && [ "$URL" != "null" ]; then
+            echo "Downloading build artifact from: $URL"
+            ext="aab"
+            if [ "$PLATFORM" = "ios" ]; then ext="ipa"; fi
+            outname="app-${PLATFORM}.${ext}"
+            curl -L "$URL" -o "$outname"
+            echo "Downloaded artifact to $outname"
+          else
+            echo "WARNING: Could not find downloadable artifact URL for platform $PLATFORM. See eas-out.json above for details."
+          fi
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload binary artifact (if present)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.platform }}-binary
+          path: |
+            app-${{ matrix.platform }}.*
+            build-*.aab
+            build-*.apk
+            build-*.ipa
+            *.aab
+            *.apk
+            *.ipa
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Create build info metadata
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_PROFILE: ${{ github.event.inputs.profile || 'development' }}
+        run: |
+          # Create timestamp and commit-based info
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          COMMIT_SHORT=$(echo $GITHUB_SHA | cut -c1-7)
+          S3_PREFIX="builds/${BUILD_PROFILE}/${PLATFORM}/${TIMESTAMP}-${COMMIT_SHORT}"
+          
+          # Create build info metadata
+          cat > build-info.json <<EOF
+          {
+            "platform": "$PLATFORM",
+            "profile": "$BUILD_PROFILE",
+            "timestamp": "$TIMESTAMP",
+            "commit": "$GITHUB_SHA",
+            "commit_short": "$COMMIT_SHORT",
+            "branch": "$GITHUB_REF_NAME",
+            "workflow_run_id": "$GITHUB_RUN_ID",
+            "workflow_run_number": "$GITHUB_RUN_NUMBER",
+            "build_type": "local",
+            "s3_prefix": "$S3_PREFIX"
+          }
+          EOF
+          
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Prepare artifacts for S3 upload (artifacts only, no source code)
+        run: |
+          # Create a clean directory with only build artifacts and metadata
+          mkdir -p s3-upload
+          
+          # Copy build artifacts (if they exist)
+          cp -f *.aab s3-upload/ 2>/dev/null || true
+          cp -f *.apk s3-upload/ 2>/dev/null || true  
+          cp -f *.ipa s3-upload/ 2>/dev/null || true
+          cp -f app-*.* s3-upload/ 2>/dev/null || true
+          cp -f build-*.* s3-upload/ 2>/dev/null || true
+          
+          # Copy Gradle build outputs (for local builds)
+          find android/app/build/outputs -name "*.aab" -exec cp {} s3-upload/ \; 2>/dev/null || true
+          find android/app/build/outputs -name "*.apk" -exec cp {} s3-upload/ \; 2>/dev/null || true
+          
+          # Copy metadata files
+          cp -f build-info.json s3-upload/ 2>/dev/null || true
+          cp -f sbom.spdx.json s3-upload/ 2>/dev/null || true
+          cp -f eas-out.json s3-upload/ 2>/dev/null || true
+          cp -f eas-view.json s3-upload/ 2>/dev/null || true
+          
+          echo "Files prepared for S3 upload:"
+          ls -la s3-upload/ || echo "No files in s3-upload directory"
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Upload artifacts to S3
+        uses: shallwefootball/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_bucket: ${{ secrets.S3_BUCKET_NAME }}
+          source_dir: 's3-upload'
+          destination_dir: ${{ env.S3_PREFIX }}
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Show last build(s)
+        run: |
+          npx eas-cli@latest build:list --status finished --limit 5 || true
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload build metadata
+        if: ${{ (github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform) && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-${{ matrix.platform }}-metadata
+          path: |
+            eas-out.json
+            eas-view.json
+            ./**/eas-build-*.log
+          if-no-files-found: ignore
+
+
+# Notes:
+# - This workflow triggers EAS (Expo Application Services) remote builds. It requires an
+#   EXPO_TOKEN secret with access to your Expo account. Create the token with `expo login`
+#   and `expo token:create` or from the Expo dashboard.
+# - iOS builds may require additional Apple credentials (APPLE_ID, FASTLANE_SESSION,
+#   APPLE_APP_SPECIFIC_PASSWORD) or previously-provisioned credentials stored in EAS.
+# - The workflow runs two parallel builds (android and ios). The EAS profile used defaults
+#   to 'production' but can be overridden when manually triggering the workflow.
