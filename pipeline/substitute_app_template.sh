@@ -77,9 +77,9 @@ export CUSTOMER_HOST=$(jq -r '.CUSTOMER_HOST // ""' config.json 2>/dev/null || e
 export ENVIRONMENT=$(jq -r '.ENVIRONMENT // ""' config.json 2>/dev/null || echo "")
 export EAS_PROJECT_ID=$(jq -r '.EAS_PROJECT_ID // ""' config.json 2>/dev/null || echo "")
 export EXPO_OWNER=$(jq -r '.EXPO_OWNER // ""' config.json 2>/dev/null || echo "")
-export IOS_BUNDLE_IDENTIFIER=$(jq -r '.IOS_BUNDLE_IDENTIFIER // ""' config.json 2>/dev/null || echo "")
-export IOS_BUILD_NUMBER_STRING=$(jq -r '.IOS_BUILD_NUMBER_STRING // ""' config.json 2>/dev/null || echo "")
-export IOS_ASSOCIATED_DOMAIN=$(jq -r '.IOS_ASSOCIATED_DOMAIN // ""' config.json 2>/dev/null || echo "")
+# export IOS_BUNDLE_IDENTIFIER=$(jq -r '.IOS_BUNDLE_IDENTIFIER // ""' config.json 2>/dev/null || echo "")
+# export IOS_BUILD_NUMBER_STRING=$(jq -r '.IOS_BUILD_NUMBER_STRING // ""' config.json 2>/dev/null || echo "")
+# export IOS_ASSOCIATED_DOMAIN=$(jq -r '.IOS_ASSOCIATED_DOMAIN // ""' config.json 2>/dev/null || echo "")
 export ANDROID_PACKAGE_NAME=$(jq -r '.ANDROID_PACKAGE_NAME // ""' config.json 2>/dev/null || echo "")
 export ANDROID_VERSION_CODE_INT=$(jq -r '.ANDROID_VERSION_CODE_INT // ""' config.json 2>/dev/null || echo "")
 export ANDROID_ADAPTIVE_BG_COLOR=$(jq -r '.ANDROID_ADAPTIVE_BG_COLOR // ""' config.json 2>/dev/null || echo "")
@@ -88,7 +88,7 @@ export ANDROID_BG_PATH=$(jq -r '.ANDROID_BG_PATH // ""' config.json 2>/dev/null 
 export ANDROID_MONO_PATH=$(jq -r '.ANDROID_MONO_PATH // ""' config.json 2>/dev/null || echo "")
 export FAVICON_PATH=$(jq -r '.FAVICON_PATH // ""' config.json 2>/dev/null || echo "")
 export FEATURE_FLAGS_JSON_OBJECT=$(jq -c '(.FEATURE_FLAGS_JSON_OBJECT // {}) | (if type=="string" then (try fromjson catch {} ) else . end)' config.json 2>/dev/null || echo '{}')
-export WORKSPACE_PAGES_JSON_ARRAY=$(jq -c '(.WORKSPACE_PAGES_JSON_ARRAY // []) | (if type=="string" then (try fromjson catch [] ) else . end)' config.json 2>/dev/null || echo '[]')
+# export WORKSPACE_PAGES_JSON_ARRAY=$(jq -c '(.WORKSPACE_PAGES_JSON_ARRAY // []) | (if type=="string" then (try fromjson catch [] ) else . end)' config.json 2>/dev/null || echo '[]')
 export DEEP_LINK_PREFIXES=$(jq -c '(.DEEP_LINK_PREFIXES // []) | (if type=="string" then (try fromjson catch [] ) else . end)' config.json 2>/dev/null || echo '[]')
 export ALLOWED_ORIGINS=$(jq -c '(.ALLOWED_ORIGINS // []) | (if type=="string" then (try fromjson catch [] ) else . end)' config.json 2>/dev/null || echo '[]')
 
@@ -110,9 +110,9 @@ sed -i "s|__CUSTOMER_HOST__|${CUSTOMER_HOST}|g" app.template.json
 sed -i "s|__ENVIRONMENT__|${ENVIRONMENT}|g" app.template.json
 sed -i "s|__EAS_PROJECT_ID__|${EAS_PROJECT_ID}|g" app.template.json
 sed -i "s|__EXPO_OWNER__|${EXPO_OWNER}|g" app.template.json
-sed -i "s|__IOS_BUNDLE_IDENTIFIER__|${IOS_BUNDLE_IDENTIFIER}|g" app.template.json
-sed -i "s|__IOS_BUILD_NUMBER_STRING__|${IOS_BUILD_NUMBER_STRING}|g" app.template.json
-sed -i "s|__IOS_ASSOCIATED_DOMAIN__|${IOS_ASSOCIATED_DOMAIN}|g" app.template.json
+# sed -i "s|__IOS_BUNDLE_IDENTIFIER__|${IOS_BUNDLE_IDENTIFIER}|g" app.template.json
+# sed -i "s|__IOS_BUILD_NUMBER_STRING__|${IOS_BUILD_NUMBER_STRING}|g" app.template.json
+# sed -i "s|__IOS_ASSOCIATED_DOMAIN__|${IOS_ASSOCIATED_DOMAIN}|g" app.template.json
 sed -i "s|__ANDROID_PACKAGE_NAME__|${ANDROID_PACKAGE_NAME}|g" app.template.json
 sed -i "s|__ANDROID_VERSION_CODE_INT__|${ANDROID_VERSION_CODE_INT}|g" app.template.json
 sed -i "s|__ANDROID_ADAPTIVE_BG_COLOR__|${ANDROID_ADAPTIVE_BG_COLOR}|g" app.template.json
@@ -123,7 +123,7 @@ sed -i "s|__FAVICON_PATH__|${FAVICON_PATH}|g" app.template.json
 # Replace quoted JSON-object placeholder (including surrounding quotes) with compact JSON
 sed -i "s|\"__FEATURE_FLAGS_JSON_OBJECT__\"|${FEATURE_FLAGS_JSON_OBJECT}|g" app.template.json
 # Replace array-wrapped placeholder ["__WORKSPACE_PAGES_JSON_ARRAY__"] with compact JSON array
-sed -i "s|\[\"__WORKSPACE_PAGES_JSON_ARRAY__\"\]|${WORKSPACE_PAGES_JSON_ARRAY}|g" app.template.json
+# sed -i "s|\[\"__WORKSPACE_PAGES_JSON_ARRAY__\"\]|${WORKSPACE_PAGES_JSON_ARRAY}|g" app.template.json
 sed -i "s|__DEEP_LINK_PREFIXES__|${DEEP_LINK_PREFIXES}|g" app.template.json
 sed -i "s|__ALLOWED_ORIGINS__|${ALLOWED_ORIGINS}|g" app.template.json
 
