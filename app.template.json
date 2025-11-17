@@ -35,7 +35,7 @@
         "projectId": "__EAS_PROJECT_ID__"
       }
     },
-    "userInterfaceStyle": "__ENVIRONMENT__",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
