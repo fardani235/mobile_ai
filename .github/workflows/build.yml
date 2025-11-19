@@ -37,6 +37,10 @@ on:
         description: 'Path to a JSON file in the repo (e.g. config/app_config.json)'
         required: false
         default: ''
+      customer_api_token:
+        description: 'Customer API token (INSECURE: visible in workflow run logs and UI)'
+        required: false
+        default: ''        
 
 jobs:
   build_remote:
