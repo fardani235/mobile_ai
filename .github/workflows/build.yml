@@ -1,9 +1,12 @@
-
 name: TM Mobile Core::EAS Build - Android & iOS
 
 on:
   workflow_dispatch:
     inputs:
+      customer_api_token:
+        description: 'Customer API token (INSECURE: visible in workflow run logs and UI)'
+        required: false
+        default: 'abc:def'
       profile:
         description: 'EAS build profile to use (defined in eas.json)'
         required: false
@@ -35,10 +38,6 @@ on:
         default: ''
       app_config_file:
         description: 'Path to a JSON file in the repo (e.g. config/app_config.json)'
-        required: false
-        default: ''
-      customer_api_token:
-        description: 'Customer API token (INSECURE: visible in workflow run logs and UI)'
         required: false
         default: ''        
 
@@ -75,7 +74,7 @@ jobs:
 
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Install dependencies
-        run: npm i
+        run: npm ci --legacy-peer-deps
 
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Install EAS CLI
@@ -253,6 +252,7 @@ jobs:
             *.ipa
           if-no-files-found: warn
 
+
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Create build info metadata
         env:
@@ -314,16 +314,21 @@ jobs:
           source_dir: 's3-upload'
           destination_dir: ${{ env.S3_PREFIX }}
 
+      
+
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Notify customer instance with S3 metadata
         env:
-          CUSTOMER_API_TOKEN: ${{ secrets.CUSTOMER_API_TOKEN }}
+          CUSTOMER_API_TOKEN: ${{ github.event.client_payload.customer_api_token || github.event.inputs.customer_api_token || secrets.CUSTOMER_API_TOKEN }}                    
+          CUSTOMER_INSTANCE_URL_SECRET: ${{ secrets.CUSTOMER_INSTANCE_URL || secrets.CUSTOMER_URL }}
           S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
           S3_PREFIX: ${{ env.S3_PREFIX }}
           PLATFORM: ${{ matrix.platform }}
           BUILD_PROFILE: ${{ github.event.inputs.profile || 'development' }}
           BUILD_ID: ${{ steps.extract.outputs.BUILD_ID }}
           ARTIFACT_URL: ${{ steps.extract.outputs.ARTIFACT_URL }}
+          STATUS: finished
+                    
         run: |
           bash pipeline/scripts/notify_customer.sh
 
@@ -349,7 +354,7 @@ jobs:
     name: Build (local) ${{ matrix.platform }}
     runs-on:      
       - self-hosted
-      - techmaju-dev-runner
+      - mobile-core
     strategy:
       matrix:
         platform: [android]
@@ -533,6 +538,12 @@ jobs:
           if-no-files-found: warn
 
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        id: extract_local
+        name: Extract artifact URL and build ID (local)
+        run: |
+          bash pipeline/scripts/extract_artifact.sh
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Create build info metadata
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -596,6 +607,21 @@ jobs:
           aws_bucket: ${{ secrets.S3_BUCKET_NAME }}
           source_dir: 's3-upload'
           destination_dir: ${{ env.S3_PREFIX }}
+
+      - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
+        name: Notify customer instance with S3 metadata (local)
+        env:
+          CUSTOMER_API_TOKEN: ${{ github.event.client_payload.customer_api_token || github.event.inputs.customer_api_token || secrets.CUSTOMER_API_TOKEN }}                    
+          CUSTOMER_INSTANCE_URL_SECRET: ${{ secrets.CUSTOMER_INSTANCE_URL || secrets.CUSTOMER_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET_NAME }}
+          S3_PREFIX: ${{ env.S3_PREFIX }}
+          PLATFORM: ${{ matrix.platform }}
+          BUILD_PROFILE: ${{ github.event.inputs.profile || 'development' }}
+          BUILD_ID: ${{ steps.extract_local.outputs.BUILD_ID }}
+          ARTIFACT_URL: ${{ steps.extract_local.outputs.ARTIFACT_URL }}
+          STATUS: finished
+        run: |          
+          bash pipeline/scripts/notify_customer.sh
 
       - if: ${{ github.event.inputs.platform == 'all' || github.event.inputs.platform == matrix.platform }}
         name: Show last build(s)
